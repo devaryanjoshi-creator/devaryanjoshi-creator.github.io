@@ -1487,7 +1487,16 @@ img,svg{max-width:100%}
 
   /* Scroll progress + active nav link */
   const bar=$('#progress');
-  addEventListener('scroll',()=>{const m=document.documentElement.scrollHeight-innerHeight;bar.style.transform='scaleX('+(m>0?scrollY/m:0)+')'},{passive:true});
+  let barTicking=false;
+  addEventListener('scroll',()=>{
+    if(barTicking)return;
+    barTicking=true;
+    requestAnimationFrame(()=>{
+      const m=document.documentElement.scrollHeight-innerHeight;
+      bar.style.transform='scaleX('+(m>0?scrollY/m:0)+')';
+      barTicking=false;
+    });
+  },{passive:true});
   const links=$$('#navLinks a[href^="#"]'),secObs=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting)links.forEach(a=>a.classList.toggle('active',a.getAttribute('href')==='#'+e.target.id))}),{rootMargin:'-45% 0px -50% 0px'});
   $$('section[id]').forEach(s=>secObs.observe(s));
 
@@ -1498,21 +1507,33 @@ img,svg{max-width:100%}
   /* Avatar: eyes follow cursor, head tilts, blinks, greets */
   const svg=$('#avSvg'),frame=$('#avFrame'),pupils=[{el:$('#pL'),cx:311,cy:331,x:0,y:0},{el:$('#pR'),cx:423,cy:331,x:0,y:0}];
   let mx=innerWidth*.7,my=innerHeight*.4,gx=mx,gy=my,tx=0,ty=0,rx=0,ry=0,idle=0;
-  addEventListener('pointermove',e=>{mx=e.clientX;my=e.clientY;idle=performance.now()});
-  addEventListener('pointerdown',e=>{mx=e.clientX;my=e.clientY});
-  ['touchstart','touchmove'].forEach(ev=>addEventListener(ev,e=>{const t=e.touches[0];if(t){mx=t.clientX;my=t.clientY;idle=performance.now()}},{passive:true}));
+  addEventListener('pointermove',e=>{if(e.pointerType==='mouse'){mx=e.clientX;my=e.clientY;idle=performance.now()}});
+  addEventListener('pointerdown',e=>{if(e.pointerType==='mouse'){mx=e.clientX;my=e.clientY}});
+  // Only a deliberate tap sets the "look at" target — touchmove is scroll
+  // motion, not pointing, so it's ignored to avoid the eyes/head jerking
+  // around while the page is being scrolled.
+  addEventListener('touchstart',e=>{const t=e.touches[0];if(t){mx=t.clientX;my=t.clientY;idle=performance.now()}},{passive:true});
+  // Pause the animation loop entirely while the avatar is off-screen, so
+  // it doesn't keep competing for the CPU (and causing scroll jank
+  // elsewhere on the page, like the progress bar) after you've scrolled by.
+  let avatarVisible=true;
+  if('IntersectionObserver' in window){
+    new IntersectionObserver(es=>{avatarVisible=es[0].isIntersecting},{threshold:0}).observe(svg.closest('.avatar-stage')||svg);
+  }
   (function loop(){
-    gx+=(mx-gx)*.14;gy+=(my-gy)*.14;
-    const r=svg.getBoundingClientRect(),k=r.width/736;
-    if(performance.now()-idle>4000){const t=performance.now()/1000;mx=innerWidth*.5+Math.sin(t*.8)*innerWidth*.35;my=innerHeight*.4+Math.cos(t*.6)*innerHeight*.2}
-    pupils.forEach(p=>{
-      const ex=r.left+p.cx*k,ey=r.top+p.cy*k,dx=mx-ex,dy=my-ey,d=Math.hypot(dx,dy)||1,s=Math.min(1,d/260);
-      p.x+=(dx/d*s*13-p.x)*.2;p.y+=(dy/d*s*5-p.y)*.2;
-      p.el.setAttribute('transform','translate('+p.x.toFixed(2)+' '+p.y.toFixed(2)+')');
-    });
-    if(!reduce){
-      const nx=(mx/innerWidth-.5)*2,ny=(my/innerHeight-.5)*2;
-      rx+=(-ny*7-rx)*.08;ry+=(nx*9-ry)*.08;frame.style.setProperty('--rx',rx.toFixed(2)+'deg');frame.style.setProperty('--ry',ry.toFixed(2)+'deg');
+    if(avatarVisible){
+      gx+=(mx-gx)*.14;gy+=(my-gy)*.14;
+      const r=svg.getBoundingClientRect(),k=r.width/736;
+      if(performance.now()-idle>4000){const t=performance.now()/1000;mx=innerWidth*.5+Math.sin(t*.8)*innerWidth*.35;my=innerHeight*.4+Math.cos(t*.6)*innerHeight*.2}
+      pupils.forEach(p=>{
+        const ex=r.left+p.cx*k,ey=r.top+p.cy*k,dx=mx-ex,dy=my-ey,d=Math.hypot(dx,dy)||1,s=Math.min(1,d/260);
+        p.x+=(dx/d*s*13-p.x)*.2;p.y+=(dy/d*s*5-p.y)*.2;
+        p.el.setAttribute('transform','translate('+p.x.toFixed(2)+' '+p.y.toFixed(2)+')');
+      });
+      if(!reduce){
+        const nx=(mx/innerWidth-.5)*2,ny=(my/innerHeight-.5)*2;
+        rx+=(-ny*7-rx)*.08;ry+=(nx*9-ry)*.08;frame.style.setProperty('--rx',rx.toFixed(2)+'deg');frame.style.setProperty('--ry',ry.toFixed(2)+'deg');
+      }
     }
     requestAnimationFrame(loop);
   })();
