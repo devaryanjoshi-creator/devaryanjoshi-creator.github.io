@@ -1281,7 +1281,9 @@ img,svg{max-width:100%}
 
 <!-- Draggable Circular Chat Button -->
 <style>
-  #chat-button { position:fixed;right:24px;bottom:24px;z-index:400;width:56px;height:56px;border-radius:50%;color:#07101800;border:2px solid var(--bg);cursor:grab;box-shadow:0 4px 12px rgba(143,131,240, 0);display:flex;align-items:center;justify-content:center;transition:transform 0.2s;font-weight:700;padding:0;overflow:hidden }
+  #chat-button { position:fixed;right:24px;bottom:24px;z-index:400;width:56px;height:56px;border-radius:50%;color:#07101800;border:2px solid var(--bg);cursor:grab;box-shadow:0 4px 12px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;transition:transform 0.2s, opacity 0.25s;font-weight:700;padding:0;overflow:hidden;touch-action:none;opacity:0;pointer-events:none }
+  #chat-button.visible { opacity:1;pointer-events:auto }
+  @media (max-width:640px){ #chat-button { width:48px;height:48px;right:16px;bottom:calc(16px + env(safe-area-inset-bottom, 0px)) } }
   #chat-button img { width:100%;height:100%;object-fit:cover;border-radius:50% }
   #chat-button:hover { transform:scale(1.08) }
   #chat-button:active { cursor:grabbing;transform:scale(0.98) }
@@ -1382,7 +1384,22 @@ img,svg{max-width:100%}
     startX = e.clientX;
     startY = e.clientY;
     btn.style.cursor = 'grabbing';
+    e.preventDefault();
   });
+
+  // Keep the floating button out of the way of the hero buttons: only
+  // show it once the hero section has scrolled out of view.
+  const heroEl = document.getElementById('hero');
+  if (heroEl && 'IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries)=>{
+      entries.forEach(entry=>{
+        btn.classList.toggle('visible', !entry.isIntersecting);
+      });
+    }, { threshold: 0 });
+    io.observe(heroEl);
+  } else {
+    btn.classList.add('visible');
+  }
 
   document.addEventListener('pointermove', (e)=>{
     if (!dragging) return;
