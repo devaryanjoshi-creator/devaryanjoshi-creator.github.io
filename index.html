@@ -1500,43 +1500,51 @@ img,svg{max-width:100%}
   const links=$$('#navLinks a[href^="#"]'),secObs=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting)links.forEach(a=>a.classList.toggle('active',a.getAttribute('href')==='#'+e.target.id))}),{rootMargin:'-45% 0px -50% 0px'});
   $$('section[id]').forEach(s=>secObs.observe(s));
 
-  /* Spotlight + magnetic buttons */
-  $$('.spot,.project-card,.skill-group').forEach(el=>el.addEventListener('pointermove',e=>{const r=el.getBoundingClientRect();el.style.setProperty('--mx',e.clientX-r.left+'px');el.style.setProperty('--my',e.clientY-r.top+'px')}));
+  /* Spotlight + magnetic buttons — mouse-hover effects only; skip on touch
+     so we're not doing layout reads on every touch-drag frame. */
+  if(fine)$$('.spot,.project-card,.skill-group').forEach(el=>el.addEventListener('pointermove',e=>{const r=el.getBoundingClientRect();el.style.setProperty('--mx',e.clientX-r.left+'px');el.style.setProperty('--my',e.clientY-r.top+'px')}));
   if(fine&&!reduce)$$('.btn,.theme-toggle').forEach(b=>{b.addEventListener('pointermove',e=>{const r=b.getBoundingClientRect();b.style.transform='translate('+(e.clientX-r.left-r.width/2)*.22+'px,'+(e.clientY-r.top-r.height/2)*.3+'px)'});b.addEventListener('pointerleave',()=>b.style.transform='')});
 
-  /* Avatar: eyes follow cursor, head tilts, blinks, greets */
+  /* Avatar: eyes follow cursor, head tilts, blinks, greets.
+     This whole effect is mouse-only — on touch devices there's no cursor
+     to track, and running it off a per-frame getBoundingClientRect() call
+     forces a layout recalculation every frame, which is what was making
+     the page feel janky/jittery on phones. So on touch we just skip it. */
   const svg=$('#avSvg'),frame=$('#avFrame'),pupils=[{el:$('#pL'),cx:311,cy:331,x:0,y:0},{el:$('#pR'),cx:423,cy:331,x:0,y:0}];
-  let mx=innerWidth*.7,my=innerHeight*.4,gx=mx,gy=my,tx=0,ty=0,rx=0,ry=0,idle=0;
-  addEventListener('pointermove',e=>{if(e.pointerType==='mouse'){mx=e.clientX;my=e.clientY;idle=performance.now()}});
-  addEventListener('pointerdown',e=>{if(e.pointerType==='mouse'){mx=e.clientX;my=e.clientY}});
-  // Only a deliberate tap sets the "look at" target — touchmove is scroll
-  // motion, not pointing, so it's ignored to avoid the eyes/head jerking
-  // around while the page is being scrolled.
-  addEventListener('touchstart',e=>{const t=e.touches[0];if(t){mx=t.clientX;my=t.clientY;idle=performance.now()}},{passive:true});
-  // Pause the animation loop entirely while the avatar is off-screen, so
-  // it doesn't keep competing for the CPU (and causing scroll jank
-  // elsewhere on the page, like the progress bar) after you've scrolled by.
-  let avatarVisible=true;
-  if('IntersectionObserver' in window){
-    new IntersectionObserver(es=>{avatarVisible=es[0].isIntersecting},{threshold:0}).observe(svg.closest('.avatar-stage')||svg);
-  }
-  (function loop(){
-    if(avatarVisible){
-      gx+=(mx-gx)*.14;gy+=(my-gy)*.14;
-      const r=svg.getBoundingClientRect(),k=r.width/736;
-      if(performance.now()-idle>4000){const t=performance.now()/1000;mx=innerWidth*.5+Math.sin(t*.8)*innerWidth*.35;my=innerHeight*.4+Math.cos(t*.6)*innerHeight*.2}
-      pupils.forEach(p=>{
-        const ex=r.left+p.cx*k,ey=r.top+p.cy*k,dx=mx-ex,dy=my-ey,d=Math.hypot(dx,dy)||1,s=Math.min(1,d/260);
-        p.x+=(dx/d*s*13-p.x)*.2;p.y+=(dy/d*s*5-p.y)*.2;
-        p.el.setAttribute('transform','translate('+p.x.toFixed(2)+' '+p.y.toFixed(2)+')');
-      });
-      if(!reduce){
-        const nx=(mx/innerWidth-.5)*2,ny=(my/innerHeight-.5)*2;
-        rx+=(-ny*7-rx)*.08;ry+=(nx*9-ry)*.08;frame.style.setProperty('--rx',rx.toFixed(2)+'deg');frame.style.setProperty('--ry',ry.toFixed(2)+'deg');
-      }
+  if(fine){
+    let mx=innerWidth*.7,my=innerHeight*.4,gx=mx,gy=my,rx=0,ry=0,idle=0;
+    addEventListener('pointermove',e=>{if(e.pointerType==='mouse'){mx=e.clientX;my=e.clientY;idle=performance.now()}});
+    addEventListener('pointerdown',e=>{if(e.pointerType==='mouse'){mx=e.clientX;my=e.clientY}});
+    // Cache the avatar's position/size and only refresh it when the layout
+    // could actually have changed (resize or scroll), instead of reading
+    // it back from the DOM on every single animation frame.
+    let cachedRect=svg.getBoundingClientRect(),rectTicking=false;
+    const refreshRect=()=>{cachedRect=svg.getBoundingClientRect()};
+    const scheduleRefresh=()=>{if(rectTicking)return;rectTicking=true;requestAnimationFrame(()=>{refreshRect();rectTicking=false})};
+    addEventListener('resize',scheduleRefresh);
+    addEventListener('scroll',scheduleRefresh,{passive:true});
+    let avatarVisible=true;
+    if('IntersectionObserver' in window){
+      new IntersectionObserver(es=>{avatarVisible=es[0].isIntersecting;if(avatarVisible)refreshRect()},{threshold:0}).observe(svg.closest('.avatar-stage')||svg);
     }
-    requestAnimationFrame(loop);
-  })();
+    (function loop(){
+      if(avatarVisible){
+        gx+=(mx-gx)*.14;gy+=(my-gy)*.14;
+        const r=cachedRect,k=r.width/736;
+        if(performance.now()-idle>4000){const t=performance.now()/1000;mx=innerWidth*.5+Math.sin(t*.8)*innerWidth*.35;my=innerHeight*.4+Math.cos(t*.6)*innerHeight*.2}
+        pupils.forEach(p=>{
+          const ex=r.left+p.cx*k,ey=r.top+p.cy*k,dx=mx-ex,dy=my-ey,d=Math.hypot(dx,dy)||1,s=Math.min(1,d/260);
+          p.x+=(dx/d*s*13-p.x)*.2;p.y+=(dy/d*s*5-p.y)*.2;
+          p.el.setAttribute('transform','translate('+p.x.toFixed(2)+' '+p.y.toFixed(2)+')');
+        });
+        if(!reduce){
+          const nx=(mx/innerWidth-.5)*2,ny=(my/innerHeight-.5)*2;
+          rx+=(-ny*7-rx)*.08;ry+=(nx*9-ry)*.08;frame.style.setProperty('--rx',rx.toFixed(2)+'deg');frame.style.setProperty('--ry',ry.toFixed(2)+'deg');
+        }
+      }
+      requestAnimationFrame(loop);
+    })();
+  }
   (function blinkLoop(){setTimeout(()=>{svg.classList.add('blink');setTimeout(()=>svg.classList.remove('blink'),200);if(Math.random()<.25)setTimeout(()=>{svg.classList.add('blink');setTimeout(()=>svg.classList.remove('blink'),200)},320);blinkLoop()},2200+Math.random()*3200)})();
   frame.addEventListener('click',()=>{svg.classList.add('blink');setTimeout(()=>svg.classList.remove('blink'),200)});
 })();
